@@ -35,11 +35,26 @@ public:
   void run() {
     if (isDue()) {
       lastRun = millis();
+
+      uint32_t start = micros();  // start timer
+
       execute();
+
+      uint32_t duration = micros() - start;  // elapsed time
+
+#if SERIALPRINT
+      Serial.print("[Task] ");
+      Serial.print(getName());
+      Serial.print(" took ");
+      Serial.print(duration);
+      Serial.println(" us");
+#endif
     }
   }
 
   virtual void execute() = 0;
+
+  virtual const char* getName() = 0;
 };
 
 // CheckStatus definition
@@ -59,6 +74,10 @@ public:
         break;
       }
     }
+  }
+
+  const char* getName() override {
+    return "CheckStatus";
   }
 };
 
@@ -86,6 +105,10 @@ public:
 
     serializeJson(doc, Serial);
     Serial.println();  // newline
+  }
+
+  const char* getName() override {
+    return "HeartBeat";
   }
 };
 
@@ -126,6 +149,10 @@ public:
       Serial.println(" A");
     }
   }
+
+  const char* getName() override {
+    return "CurrentCheck";
+  }
 };
 
 // relaySetpointTask definition
@@ -152,10 +179,11 @@ private:
   unsigned long waitStartTime;
   RelayCtrlState ctrlState = IDLE;
   bool relaySetpointIsHighSnapshot[4];
+  uint32_t waitDuration = 20;
 
 public:
   RelayCtrlTask(NodeState& nodeState)
-    : Task(100), nodeState(nodeState) {}
+    : Task(25), nodeState(nodeState) {}
 
   void begin() {
     for (int i = 0; i < 4; i++) {
@@ -210,7 +238,7 @@ public:
 
       case WAITING_FOR_ACTUATION:
         {
-          if (millis() - waitStartTime >= 500) {
+          if (millis() - waitStartTime >= waitDuration) {
             ctrlState = CHECKING_ACTUATION;
           }
           break;
@@ -248,6 +276,43 @@ public:
         }
     }
   }
+
+  const char* getName() override {
+    return "RelayCtrl";
+  }
+};
+
+
+// ToggleTestTask
+class ToggleTestTask : public Task {
+private:
+  NodeState& nodeState;
+  uint8_t currentIndex = 0;
+  static const uint8_t NUM_RELAYS = 4;
+
+public:
+  ToggleTestTask(NodeState& state)
+    : Task(250), nodeState(state) {}
+
+  void execute() override {
+    // Turn all relays off
+    for (uint8_t i = 0; i < NUM_RELAYS; i++) {
+      nodeState.relaySetpointIsHigh[i] = false;
+    }
+
+    // Turn on only the current relay
+    nodeState.relaySetpointIsHigh[currentIndex] = true;
+
+    // Advance to next state for next scheduler call
+    currentIndex++;
+    if (currentIndex >= NUM_RELAYS) {
+      currentIndex = 0;
+    }
+  }
+
+  const char* getName() override {
+    return "ToggleTest";
+  }
 };
 
 // HandleCanBus TODO
@@ -268,12 +333,16 @@ CheckStatusTask checkstatus(nodeState);
 HeartBeatTask heartbeat(nodeState);
 CurrentCheckTask currentcheck(nodeState);
 RelayCtrlTask relayCtrl(nodeState);
+ToggleTestTask toggleTest(nodeState);
 
 void setup() {
   Serial.begin(115200);
   relayCtrl.begin();
 
   nodeState.status = ACTIVE;  // after boot set status to active
+
+  pinMode(LED_BUILTIN, OUTPUT);  // turn on status LED to show successfull boot
+  digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void loop() {
@@ -290,6 +359,9 @@ void loop() {
 
   // maybe send heartbeat
   heartbeat.run();
+
+  // maybe run relay toggle sequence
+  toggleTest.run();
 
   // maybe send telemetry
 }
