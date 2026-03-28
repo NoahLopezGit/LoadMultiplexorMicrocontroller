@@ -292,9 +292,13 @@ private:
 
 public:
   ToggleTestTask(NodeState& state)
-    : Task(250), nodeState(state) {}
+    : Task(1000), nodeState(state) {}
 
   void execute() override {
+    // // 5s single relay toggle test
+    // nodeState.relaySetpointIsHigh[0] = nodeState.relaySetpointIsHigh[0] ? false : true;
+
+    // relay toggle sequence test
     // Turn all relays off
     for (uint8_t i = 0; i < NUM_RELAYS; i++) {
       nodeState.relaySetpointIsHigh[i] = false;
