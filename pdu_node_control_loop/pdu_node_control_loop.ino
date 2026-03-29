@@ -1,19 +1,21 @@
 #include <ArduinoJson.h>
+#include <FlexCAN_T4.h>
 
 #define SERIALPRINT true  // set false if you don't want serial prints
 
-// state struct (shared)
-#define BOOT 0
-#define ACTIVE 1
-#define FAULT 2
+// state definitions
+enum NodeState : uint8_t {
+  NODE_INIT,
+  NODE_ACTIVE,
+  NODE_FAULT
+};
 
 struct NodeData {
-  String id;
-  int status;  // 0 boot, 1 active, 2 fault
-
+  uint8_t id;
+  uint8_t schema_version;
+  NodeState state;  // 0 boot, 1 active, 2 fault
   float current[4];
   uint32_t currentUpdateTime = 0;
-
   bool relaySetpointIsHigh[4];
   bool relayStateIsHigh[4];
   uint32_t relaySetpointUpdateTime;  // this must be set to update relay, call updateRelaySetpoints
@@ -70,7 +72,7 @@ public:
     // check overcurrent
     for (int i = 0; i < 4; i++) {
       if (nodeData.current[i] > 10) {
-        nodeData.status = FAULT;
+        nodeData.state = NODE_FAULT;
         break;
       }
     }
@@ -93,13 +95,13 @@ public:
   void execute() override {
     JsonDocument doc;
 
-    const String statusStr =
-      (nodeData.status == 0)   ? "Boot"
-      : (nodeData.status == 1) ? "Active"
-      : (nodeData.status == 2) ? "Fault"
-                                : "Unknown";
+    const String stateStr =
+      (nodeData.state == NODE_INIT)     ? "Boot"
+      : (nodeData.state == NODE_ACTIVE) ? "Active"
+      : (nodeData.state == NODE_FAULT)  ? "Fault"
+                                        : "Unknown";
 
-    doc["status"] = statusStr;
+    doc["state"] = stateStr;
     doc["uptime"] = millis();
     doc["device"] = nodeData.id;
 
@@ -267,7 +269,7 @@ public:
 
             // check for fault
             if (relaySetpointIsHighSnapshot[i] != relayStateIsHigh) {
-              nodeData.status = FAULT;
+              nodeData.state = NODE_FAULT;
             }
           }
 
@@ -318,10 +320,59 @@ public:
   }
 };
 
+// Device Status CAN message task
+void packDeviceStatusMessage(const NodeData& nodeData, uint8_t payload[8]) {
+  payload[0] = nodeData.schema_version;
+  payload[1] = static_cast<uint8_t>(nodeData.state);
+  payload[2] = 0;  // static_cast<uint8_t>(status.status_flags & 0xFF);
+  payload[3] = 0;  // static_cast<uint8_t>((status.status_flags >> 8) & 0xFF);
+  payload[4] = 0;  // static_cast<uint8_t>(status.uptime_s & 0xFF);
+  payload[5] = 0;  // static_cast<uint8_t>((status.uptime_s >> 8) & 0xFF);
+  payload[6] = 0;  // status.heartbeat_counter;
+  payload[7] = 0;
+}
+
+class SendDeviceStatusTask : public Task {
+private:
+  NodeData& nodeData;
+  FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16>& canBus;
+  uint32_t device_status_base_id = 0x100;
+
+public:
+  SendDeviceStatusTask(NodeData& nodeData,
+                       FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16>& canBus)
+    : Task(1000), nodeData(nodeData), canBus(canBus) {}
+
+  void execute() override {
+    CAN_message_t txMsg;
+    txMsg.id = device_status_base_id + nodeData.id;
+    txMsg.len = 8;
+    txMsg.flags.extended = 0;
+
+    uint8_t payload[8];
+    packDeviceStatusMessage(nodeData, payload);
+    for (uint8_t i = 0; i < 8; ++i) {
+      txMsg.buf[i] = payload[i];
+    }
+
+    canBus.write(txMsg);
+
+    if (SERIALPRINT) {
+      Serial.println("Sending Device Status");
+    }
+  }
+
+  const char* getName() override {
+    return "SendDeviceStatus";
+  }
+};
+
 // init state and config
+NodeState nodeState = NODE_INIT;
 NodeData nodeData{
-  "NODE-1",                        //id
-  BOOT,                            //status
+  0,                               //id
+  1,                               //schema_version
+  nodeState,                       //state
   { 0.0f, 0.0f, 0.0f, 0.0f },      // current
   0,                               // currentUpdateTime
   { false, false, false, false },  // relaySetpointIsHigh
@@ -336,11 +387,14 @@ CurrentCheckTask currentcheck(nodeData);
 RelayCtrlTask relayCtrl(nodeData);
 ToggleTestTask toggleTest(nodeData);
 
+FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> canBus;
+SendDeviceStatusTask sendDeviceStatus(nodeData, canBus);
+
 void setup() {
   Serial.begin(115200);
   relayCtrl.begin();
 
-  nodeData.status = ACTIVE;  // after boot set status to active
+  nodeData.state = NODE_ACTIVE;  // after boot set state to active
 
   pinMode(LED_BUILTIN, OUTPUT);  // turn on status LED to show successfull boot
   digitalWrite(LED_BUILTIN, HIGH);
@@ -365,4 +419,5 @@ void loop() {
   toggleTest.run();
 
   // maybe send telemetry
+  sendDeviceStatus.run();
 }
