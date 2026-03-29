@@ -1,47 +1,53 @@
 #include <FlexCAN_T4.h>
+FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> myCan1;  // CAN1
+FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> myCan2;  // CAN2
 
-FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1; //CAN1 selects which can to use, for teensy 4.1 this would be CTRX1 and RTRX1
-FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> can2;
-CAN_message_t rx_msg;
-CAN_message_t tx_msg;
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);  // Wait for Serial Monitor to open
+  pinMode(LED_BUILTIN, OUTPUT);          // LED to show loop activity
+  // Initialize each CAN bus
+  myCan1.begin();
+  // Set the baud rate for each CAN bus
+  myCan1.setBaudRate(125000);  // Set baud rate to 1 Mbps for CAN1
 
+  // Initialize each CAN bus
+  myCan2.begin();
+  // Set the baud rate for each CAN bus
+  myCan2.setBaudRate(125000);  // Set baud rate to 1 Mbps for CAN2
 
-
-void setup(void) {
-  can1.begin();
-  can1.setBaudRate(250000);
-  can2.begin();
-  can2.setBaudRate(250000);
+  Serial.println("CAN buses initialized.");
 }
-
 void loop() {
-  
-  // adding data to message
-  tx_msg.id = 0x123;
-  tx_msg.len = 8;
-  tx_msg.flags.extended = false;
-  tx_msg.buf[0] = 0; 
-  tx_msg.buf[1] = 1;
-  tx_msg.buf[2] = 2;
-  tx_msg.buf[3] = 3;
-  tx_msg.buf[4] = 4;
-  tx_msg.buf[5] = 5;
-  tx_msg.buf[6] = 6;
-  tx_msg.buf[7] = 7;
-
-  // write(const CAN_message_t &msg) -> int
-  can1.write(tx_msg);
-
-  if ( can2.read(rx_msg) ) {
-    Serial.print("CAN2 "); 
-    Serial.print("MB: "); Serial.print(rx_msg.mb);
-    Serial.print("  ID: 0x"); Serial.print(rx_msg.id, HEX );
-    Serial.print("  EXT: "); Serial.print(rx_msg.flags.extended );
-    Serial.print("  LEN: "); Serial.print(rx_msg.len);
-    Serial.print(" DATA: ");
-    for ( uint8_t i = 0; i < 8; i++ ) {
-      Serial.print(rx_msg.buf[i]); Serial.print(" ");
-    }
-    Serial.print("  TS: "); Serial.println(rx_msg.timestamp);
+  digitalToggle(LED_BUILTIN);            // Toggle LED to show activity
+  // Message to send
+  CAN_message_t msg;
+  msg.len = 8;
+  msg.id = 1;
+  msg.buf[0] = 1;
+  msg.buf[1] = 2;
+  msg.buf[2] = 3;
+  msg.buf[3] = 4;
+  msg.buf[4] = 5;
+  msg.buf[5] = 6;
+  msg.buf[6] = 7;
+  msg.buf[7] = 8;
+  // Send message on CAN1
+  if (myCan1.write(msg)) {
+    Serial.println("Message sent on CAN1");
   }
+ 
+  // Check for received messages on CAN1
+  if (myCan2.read(msg)) {
+    Serial.print("Received on CAN2: ID=0x");
+    Serial.print(msg.id, HEX);
+    Serial.print(" Data=");
+    for (int i = 0; i < msg.len; i++) {
+      Serial.print(msg.buf[i], HEX);
+      Serial.print(" ");
+    }
+    Serial.println();
+  }
+
+  delay(2000);  // Delay before sending the next message
 }
