@@ -7,7 +7,7 @@
 #define ACTIVE 1
 #define FAULT 2
 
-struct NodeState {
+struct NodeData {
   String id;
   int status;  // 0 boot, 1 active, 2 fault
 
@@ -60,17 +60,17 @@ public:
 // CheckStatus definition
 class CheckStatusTask : public Task {
 private:
-  NodeState& nodeState;
+  NodeData& nodeData;
 
 public:
-  CheckStatusTask(NodeState& state)
-    : Task(1000), nodeState(state) {}
+  CheckStatusTask(NodeData& state)
+    : Task(1000), nodeData(state) {}
 
   void execute() override {
     // check overcurrent
     for (int i = 0; i < 4; i++) {
-      if (nodeState.current[i] > 10) {
-        nodeState.status = FAULT;
+      if (nodeData.current[i] > 10) {
+        nodeData.status = FAULT;
         break;
       }
     }
@@ -84,24 +84,24 @@ public:
 // HeartBeatTask definition
 class HeartBeatTask : public Task {
 private:
-  NodeState& nodeState;
+  NodeData& nodeData;
 
 public:
-  HeartBeatTask(NodeState& state)
-    : Task(1000), nodeState(state) {}
+  HeartBeatTask(NodeData& state)
+    : Task(1000), nodeData(state) {}
 
   void execute() override {
     JsonDocument doc;
 
     const String statusStr =
-      (nodeState.status == 0)   ? "Boot"
-      : (nodeState.status == 1) ? "Active"
-      : (nodeState.status == 2) ? "Fault"
+      (nodeData.status == 0)   ? "Boot"
+      : (nodeData.status == 1) ? "Active"
+      : (nodeData.status == 2) ? "Fault"
                                 : "Unknown";
 
     doc["status"] = statusStr;
     doc["uptime"] = millis();
-    doc["device"] = nodeState.id;
+    doc["device"] = nodeData.id;
 
     serializeJson(doc, Serial);
     Serial.println();  // newline
@@ -122,30 +122,30 @@ float getCurrent(int pin) {               // current check definition //todo can
 
 class CurrentCheckTask : public Task {
 private:
-  NodeState& nodeState;
+  NodeData& nodeData;
 
 public:
-  CurrentCheckTask(NodeState& state)
-    : Task(100), nodeState(state) {}
+  CurrentCheckTask(NodeData& state)
+    : Task(100), nodeData(state) {}
 
   void execute() override {
     // current measurement pins are as follows: A1, A2, A3, A4
-    nodeState.current[0] = getCurrent(A1);
-    nodeState.current[1] = getCurrent(A2);
-    nodeState.current[2] = getCurrent(A3);
-    nodeState.current[3] = getCurrent(A4);
+    nodeData.current[0] = getCurrent(A1);
+    nodeData.current[1] = getCurrent(A2);
+    nodeData.current[2] = getCurrent(A3);
+    nodeData.current[3] = getCurrent(A4);
 
-    nodeState.currentUpdateTime = millis();
+    nodeData.currentUpdateTime = millis();
 
     // optinal, print current
     if (SERIALPRINT) {
-      Serial.print(nodeState.current[0]);
+      Serial.print(nodeData.current[0]);
       Serial.print(" A, ");
-      Serial.print(nodeState.current[1]);
+      Serial.print(nodeData.current[1]);
       Serial.print(" A, ");
-      Serial.print(nodeState.current[2]);
+      Serial.print(nodeData.current[2]);
       Serial.print(" A, ");
-      Serial.print(nodeState.current[3]);
+      Serial.print(nodeData.current[3]);
       Serial.println(" A");
     }
   }
@@ -163,7 +163,7 @@ enum RelayCtrlState {
 };
 
 // relaySetpoint updater
-void updateRelaySetpoints(NodeState& state, bool relaySetpointIsHigh[4]) {
+void updateRelaySetpoints(NodeData& state, bool relaySetpointIsHigh[4]) {
   for (int i = 0; i < 4; i++) {
     state.relaySetpointIsHigh[i] = relaySetpointIsHigh[i];
   }
@@ -173,7 +173,7 @@ void updateRelaySetpoints(NodeState& state, bool relaySetpointIsHigh[4]) {
 // TODO change to actual DI pins when measurement circuit is physically added
 class RelayCtrlTask : public Task {
 private:
-  NodeState& nodeState;
+  NodeData& nodeData;
   int relayCtrlPins[4] = { 0, 1, 2, 3 };         // DIO pins are 0,1,2,3
   int relayMeasurementPins[4] = { 0, 1, 2, 3 };  // DI pins are 0,1,2,3 (will be updated)
   unsigned long waitStartTime;
@@ -182,8 +182,8 @@ private:
   uint32_t waitDuration = 20;
 
 public:
-  RelayCtrlTask(NodeState& nodeState)
-    : Task(25), nodeState(nodeState) {}
+  RelayCtrlTask(NodeData& nodeData)
+    : Task(25), nodeData(nodeData) {}
 
   void begin() {
     for (int i = 0; i < 4; i++) {
@@ -201,17 +201,17 @@ public:
           // todo how do we know if it isn't being set or it has been update since?
           bool relayWasUpdated = false;
           for (int i = 0; i < 4; i++) {
-            if (nodeState.relaySetpointIsHigh[i] != nodeState.relayStateIsHigh[i]) {
+            if (nodeData.relaySetpointIsHigh[i] != nodeData.relayStateIsHigh[i]) {
               digitalWrite(
                 relayCtrlPins[i],
-                nodeState.relaySetpointIsHigh[i] ? HIGH : LOW);
+                nodeData.relaySetpointIsHigh[i] ? HIGH : LOW);
               relayWasUpdated = true;
             }
           }
 
           if (relayWasUpdated) {
             for (int i = 0; i < 4; i++) {
-              relaySetpointIsHighSnapshot[i] = nodeState.relaySetpointIsHigh[i];
+              relaySetpointIsHighSnapshot[i] = nodeData.relaySetpointIsHigh[i];
             }
             waitStartTime = millis();
             ctrlState = WAITING_FOR_ACTUATION;
@@ -220,14 +220,14 @@ public:
           if (SERIALPRINT) {
             Serial.print("Relay Setpoint: ");
             for (int i = 0; i < 4; i++) {
-              Serial.print(nodeState.relaySetpointIsHigh[i]);
+              Serial.print(nodeData.relaySetpointIsHigh[i]);
               Serial.print(" ");
             }
             Serial.println();
 
             Serial.print("Relay State: ");
             for (int i = 0; i < 4; i++) {
-              Serial.print(nodeState.relayStateIsHigh[i]);
+              Serial.print(nodeData.relayStateIsHigh[i]);
               Serial.print(" ");
             }
             Serial.println();
@@ -249,7 +249,7 @@ public:
         {
           bool snapshotInvalid = false;
           for (int i = 0; i < 4; i++) {
-            if (relaySetpointIsHighSnapshot[i] != nodeState.relaySetpointIsHigh[i]) {
+            if (relaySetpointIsHighSnapshot[i] != nodeData.relaySetpointIsHigh[i]) {
               snapshotInvalid = true;
               break;
             }
@@ -263,11 +263,11 @@ public:
           for (int i = 0; i < 4; i++) {
             // update relay states
             bool relayStateIsHigh = (digitalRead(relayMeasurementPins[i]) == HIGH);  // TODO this isn't a true readback until DI measurement is physically configured
-            nodeState.relayStateIsHigh[i] = relayStateIsHigh;
+            nodeData.relayStateIsHigh[i] = relayStateIsHigh;
 
             // check for fault
             if (relaySetpointIsHighSnapshot[i] != relayStateIsHigh) {
-              nodeState.status = FAULT;
+              nodeData.status = FAULT;
             }
           }
 
@@ -282,30 +282,29 @@ public:
   }
 };
 
-
 // ToggleTestTask
 class ToggleTestTask : public Task {
 private:
-  NodeState& nodeState;
+  NodeData& nodeData;
   uint8_t currentIndex = 0;
   static const uint8_t NUM_RELAYS = 4;
 
 public:
-  ToggleTestTask(NodeState& state)
-    : Task(1000), nodeState(state) {}
+  ToggleTestTask(NodeData& state)
+    : Task(1000), nodeData(state) {}
 
   void execute() override {
     // // 5s single relay toggle test
-    // nodeState.relaySetpointIsHigh[0] = nodeState.relaySetpointIsHigh[0] ? false : true;
+    // nodeData.relaySetpointIsHigh[0] = nodeData.relaySetpointIsHigh[0] ? false : true;
 
     // relay toggle sequence test
     // Turn all relays off
     for (uint8_t i = 0; i < NUM_RELAYS; i++) {
-      nodeState.relaySetpointIsHigh[i] = false;
+      nodeData.relaySetpointIsHigh[i] = false;
     }
 
     // Turn on only the current relay
-    nodeState.relaySetpointIsHigh[currentIndex] = true;
+    nodeData.relaySetpointIsHigh[currentIndex] = true;
 
     // Advance to next state for next scheduler call
     currentIndex++;
@@ -319,10 +318,8 @@ public:
   }
 };
 
-// HandleCanBus TODO
-
 // init state and config
-NodeState nodeState{
+NodeData nodeData{
   "NODE-1",                        //id
   BOOT,                            //status
   { 0.0f, 0.0f, 0.0f, 0.0f },      // current
@@ -333,17 +330,17 @@ NodeState nodeState{
 };
 
 // init tasks
-CheckStatusTask checkstatus(nodeState);
-HeartBeatTask heartbeat(nodeState);
-CurrentCheckTask currentcheck(nodeState);
-RelayCtrlTask relayCtrl(nodeState);
-ToggleTestTask toggleTest(nodeState);
+CheckStatusTask checkstatus(nodeData);
+HeartBeatTask heartbeat(nodeData);
+CurrentCheckTask currentcheck(nodeData);
+RelayCtrlTask relayCtrl(nodeData);
+ToggleTestTask toggleTest(nodeData);
 
 void setup() {
   Serial.begin(115200);
   relayCtrl.begin();
 
-  nodeState.status = ACTIVE;  // after boot set status to active
+  nodeData.status = ACTIVE;  // after boot set status to active
 
   pinMode(LED_BUILTIN, OUTPUT);  // turn on status LED to show successfull boot
   digitalWrite(LED_BUILTIN, HIGH);
