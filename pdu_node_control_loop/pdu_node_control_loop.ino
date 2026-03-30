@@ -1,63 +1,9 @@
 #include <ArduinoJson.h>
 #include <FlexCAN_T4.h>
-
-#define SERIALPRINT true  // set false if you don't want serial prints
-
-// state definitions
-enum NodeState : uint8_t {
-  NODE_INIT,
-  NODE_ACTIVE,
-  NODE_FAULT
-};
-
-struct NodeData {
-  uint8_t id;
-  uint8_t schema_version;
-  NodeState state;  // 0 boot, 1 active, 2 fault
-  float current[4];
-  uint32_t currentUpdateTime = 0;
-  bool relaySetpointIsHigh[4];
-  bool relayStateIsHigh[4];
-  uint32_t relaySetpointUpdateTime;  // this must be set to update relay, call updateRelaySetpoints
-};
-
-// base cooperative task to be inherited by actual tasks
-class Task {
-public:
-  uint32_t interval;
-  uint32_t lastRun;
-
-  Task(uint32_t intervalMs)
-    : interval(intervalMs), lastRun(0) {}
-
-  bool isDue() {
-    return millis() - lastRun >= interval;
-  }
-
-  void run() {
-    if (isDue()) {
-      lastRun = millis();
-
-      uint32_t start = micros();  // start timer
-
-      execute();
-
-      uint32_t duration = micros() - start;  // elapsed time
-
-#if SERIALPRINT
-      Serial.print("[Task] ");
-      Serial.print(getName());
-      Serial.print(" took ");
-      Serial.print(duration);
-      Serial.println(" us");
-#endif
-    }
-  }
-
-  virtual void execute() = 0;
-
-  virtual const char* getName() = 0;
-};
+#include "Config.h"
+#include "Task.h"
+#include "NodeData.h"
+#include "SendDeviceStatusTask.h"
 
 // CheckStatus definition
 class CheckStatusTask : public Task {
@@ -317,53 +263,6 @@ public:
 
   const char* getName() override {
     return "ToggleTest";
-  }
-};
-
-// Device Status CAN message task
-void packDeviceStatusMessage(const NodeData& nodeData, uint8_t payload[8]) {
-  payload[0] = nodeData.schema_version;
-  payload[1] = static_cast<uint8_t>(nodeData.state);
-  payload[2] = 0;  // static_cast<uint8_t>(status.status_flags & 0xFF);
-  payload[3] = 0;  // static_cast<uint8_t>((status.status_flags >> 8) & 0xFF);
-  payload[4] = 0;  // static_cast<uint8_t>(status.uptime_s & 0xFF);
-  payload[5] = 0;  // static_cast<uint8_t>((status.uptime_s >> 8) & 0xFF);
-  payload[6] = 0;  // status.heartbeat_counter;
-  payload[7] = 0;
-}
-
-class SendDeviceStatusTask : public Task {
-private:
-  NodeData& nodeData;
-  FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16>& canBus;
-  uint32_t device_status_base_id = 0x100;
-
-public:
-  SendDeviceStatusTask(NodeData& nodeData,
-                       FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16>& canBus)
-    : Task(1000), nodeData(nodeData), canBus(canBus) {}
-
-  void execute() override {
-    CAN_message_t txMsg;
-    txMsg.id = device_status_base_id + nodeData.id;
-    txMsg.len = 8;
-    txMsg.flags.extended = 0;
-
-    uint8_t payload[8];
-    packDeviceStatusMessage(nodeData, payload);
-    for (uint8_t i = 0; i < 8; ++i) {
-      txMsg.buf[i] = payload[i];
-    }
-
-    canBus.write(txMsg);
-
-    if (SERIALPRINT) {
-      Serial.println("Sending Device Status");
-    }
-  }
-
-  const char* getName() override {
-    return "SendDeviceStatus";
   }
 };
 
