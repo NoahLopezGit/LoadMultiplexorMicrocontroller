@@ -14,8 +14,7 @@ struct NodeData {
   uint8_t schema_version;
   NodeState state;  // 0 boot, 1 active, 2 fault
 
-  float current[4];
-  uint32_t currentUpdateTime = 0;
+  uint16_t current[4];
 
   bool relaySetpointIsHigh[4];
   bool relayStateIsHigh[4];

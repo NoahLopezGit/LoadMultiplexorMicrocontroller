@@ -4,68 +4,21 @@
 #include "Task.h"
 #include "NodeData.h"
 #include "SendDeviceStatusTask.h"
-
-// CheckStatus definition
-class CheckStatusTask : public Task {
-private:
-  NodeData& nodeData;
-
-public:
-  CheckStatusTask(NodeData& state)
-    : Task(1000), nodeData(state) {}
-
-  void execute() override {
-    // check overcurrent
-    for (int i = 0; i < 4; i++) {
-      if (nodeData.current[i] > 10) {
-        nodeData.state = NODE_FAULT;
-        break;
-      }
-    }
-  }
-
-  const char* getName() override {
-    return "CheckStatus";
-  }
-};
-
-// HeartBeatTask definition
-class HeartBeatTask : public Task {
-private:
-  NodeData& nodeData;
-
-public:
-  HeartBeatTask(NodeData& state)
-    : Task(1000), nodeData(state) {}
-
-  void execute() override {
-    JsonDocument doc;
-
-    const String stateStr =
-      (nodeData.state == NODE_INIT)     ? "Boot"
-      : (nodeData.state == NODE_ACTIVE) ? "Active"
-      : (nodeData.state == NODE_FAULT)  ? "Fault"
-                                        : "Unknown";
-
-    doc["state"] = stateStr;
-    doc["uptime"] = millis();
-    doc["device"] = nodeData.id;
-
-    serializeJson(doc, Serial);
-    Serial.println();  // newline
-  }
-
-  const char* getName() override {
-    return "HeartBeat";
-  }
-};
+#include "SendCurrentTask.h"
 
 // CurrentCheckTask definition
-float getCurrent(int pin) {               // current check definition //todo can definitely make this faster
-  int raw = analogRead(pin);              // 0–1023
-  float voltage = raw * (5.0 / 1023.0);   // convert to volts
-  float current = voltage / (0.01 * 25);  // 25x amp of .01 Ohm resistor
-  return current;
+uint16_t getCurrent_mA(int pin) { // returns current in mA (10000 mA max).
+  uint16_t raw = analogRead(pin);
+
+  // Step-by-step integer math:
+  // voltage (mV) = raw * 3300 / 1023 = raw
+  // current (mA) = voltage / 0.25 = voltage * 4
+
+  // overflow check... fits in uint16_t
+  // 1023 * 3300 * 4 = 13,448,400  // fits in uint32_t
+  // multiplication happens in uint32_t and then is divided down to fit in uint16_t
+
+  return (raw * 3300UL * 4) / 1023UL;
 }
 
 class CurrentCheckTask : public Task {
@@ -78,12 +31,10 @@ public:
 
   void execute() override {
     // current measurement pins are as follows: A1, A2, A3, A4
-    nodeData.current[0] = getCurrent(A1);
-    nodeData.current[1] = getCurrent(A2);
-    nodeData.current[2] = getCurrent(A3);
-    nodeData.current[3] = getCurrent(A4);
-
-    nodeData.currentUpdateTime = millis();
+    nodeData.current[0] = getCurrent_mA(A1);
+    nodeData.current[1] = getCurrent_mA(A2);
+    nodeData.current[2] = getCurrent_mA(A3);
+    nodeData.current[3] = getCurrent_mA(A4);
 
     // optinal, print current
     if (SERIALPRINT) {
@@ -272,26 +223,27 @@ NodeData nodeData{
   0,                               //id
   1,                               //schema_version
   nodeState,                       //state
-  { 0.0f, 0.0f, 0.0f, 0.0f },      // current
-  0,                               // currentUpdateTime
+  { 0, 0, 0, 0 },      // current
   { false, false, false, false },  // relaySetpointIsHigh
   { false, false, false, false },  // relayStateIsHigh
   0                                // relaySetpointUpdateTime
 };
 
 // init tasks
-CheckStatusTask checkstatus(nodeData);
-HeartBeatTask heartbeat(nodeData);
 CurrentCheckTask currentcheck(nodeData);
 RelayCtrlTask relayCtrl(nodeData);
 ToggleTestTask toggleTest(nodeData);
 
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> canBus;
 SendDeviceStatusTask sendDeviceStatus(nodeData, canBus);
+SendCurrentTask sendCurrent(nodeData, canBus);
 
 void setup() {
   Serial.begin(115200);
   relayCtrl.begin();
+
+  canBus.begin();
+  canBus.setBaudRate(500000);
 
   nodeData.state = NODE_ACTIVE;  // after boot set state to active
 
@@ -308,15 +260,10 @@ void loop() {
   // maybe get current
   currentcheck.run();
 
-  // maybe check status
-  checkstatus.run();
-
-  // maybe send heartbeat
-  heartbeat.run();
-
   // maybe run relay toggle sequence
   toggleTest.run();
 
   // maybe send telemetry
   sendDeviceStatus.run();
+  sendCurrent.run();
 }
