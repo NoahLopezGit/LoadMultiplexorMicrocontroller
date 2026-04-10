@@ -33,7 +33,13 @@ const char* SendDeviceStatusTask::getName() {
 void SendDeviceStatusTask::packDeviceStatusMessage(const NodeData& nodeData, uint8_t payload[8]) {
   payload[0] = nodeData.schema_version;
   payload[1] = static_cast<uint8_t>(nodeData.state);
-  payload[2] = 0;  // static_cast<uint8_t>(status.status_flags & 0xFF);
+
+  uint8_t relaySetpoints = 0;
+  for (int i=0; i<4; i++){
+    relaySetpoints = relaySetpoints | nodeData.relaySetpointIsHigh[i] << i;
+  }
+  payload[2] = relaySetpoints;
+
   payload[3] = 0;  // static_cast<uint8_t>((status.status_flags >> 8) & 0xFF);
   payload[4] = 0;  // static_cast<uint8_t>(status.uptime_s & 0xFF);
   payload[5] = 0;  // static_cast<uint8_t>((status.uptime_s >> 8) & 0xFF);
