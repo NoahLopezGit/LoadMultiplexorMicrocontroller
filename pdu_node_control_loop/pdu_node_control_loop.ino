@@ -5,9 +5,10 @@
 #include "NodeData.h"
 #include "SendDeviceStatusTask.h"
 #include "SendCurrentTask.h"
+#include "RecvCANTask.h"
 
 // CurrentCheckTask definition
-uint16_t getCurrent_mA(int pin) { // returns current in mA (10000 mA max).
+uint16_t getCurrent_mA(int pin) {  // returns current in mA (10000 mA max).
   uint16_t raw = analogRead(pin);
 
   // Step-by-step integer math:
@@ -223,7 +224,7 @@ NodeData nodeData{
   0,                               //id
   1,                               //schema_version
   nodeState,                       //state
-  { 0, 0, 0, 0 },      // current
+  { 0, 0, 0, 0 },                  // current
   { false, false, false, false },  // relaySetpointIsHigh
   { false, false, false, false },  // relayStateIsHigh
   0                                // relaySetpointUpdateTime
@@ -237,6 +238,7 @@ ToggleTestTask toggleTest(nodeData);
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> canBus;
 SendDeviceStatusTask sendDeviceStatus(nodeData, canBus);
 SendCurrentTask sendCurrent(nodeData, canBus);
+RecvCANTask recvCAN(nodeData, canBus);
 
 void setup() {
   Serial.begin(115200);
@@ -253,6 +255,7 @@ void setup() {
 
 void loop() {
   // maybe handle CAN bus
+  recvCAN.run();
 
   // maybe actuate relay
   relayCtrl.run();

@@ -31,12 +31,12 @@ const char* SendCurrentTask::getName() {
 }
 
 void SendCurrentTask::packCurrentMessage(const NodeData& nodeData, uint8_t payload[8]) {
-  payload[0] = nodeData.current[0] & 0xFF;         // current 1 low byte
-  payload[1] = nodeData.current[0] >> 8;           // current 1 high byte
-  payload[2] = nodeData.current[1] & 0xFF;         // current 2 low byte 
-  payload[3] = nodeData.current[1] >> 8;           // current 2 high byte
-  payload[4] = nodeData.current[2] & 0xFF;         // current 3 low byte
-  payload[5] = nodeData.current[2] >> 8;           // current 3 high byte
-  payload[6] = nodeData.current[3] & 0xFF;         // current 4 low byte
-  payload[7] = nodeData.current[3] >> 8;           // current 4 high byte
+  payload[0] = nodeData.current[0] & 0xFF;  // current 1 low byte
+  payload[1] = nodeData.current[0] >> 8;    // current 1 high byte
+  payload[2] = nodeData.current[1] & 0xFF;  // current 2 low byte
+  payload[3] = nodeData.current[1] >> 8;    // current 2 high byte
+  payload[4] = nodeData.current[2] & 0xFF;  // current 3 low byte
+  payload[5] = nodeData.current[2] >> 8;    // current 3 high byte
+  payload[6] = nodeData.current[3] & 0xFF;  // current 4 low byte
+  payload[7] = nodeData.current[3] >> 8;    // current 4 high byte
 }
