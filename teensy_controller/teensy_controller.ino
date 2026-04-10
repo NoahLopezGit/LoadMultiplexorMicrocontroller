@@ -55,5 +55,8 @@ void loop() {
 
     myCan2.write(msg);
     last_send_time = millis();  // Update the last send time
+    Serial.print("Sending CTRL msg: ");
+    Serial.print(msg.buf[1]);
+    Serial.println();
   }
 }

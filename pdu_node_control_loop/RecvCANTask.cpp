@@ -5,11 +5,11 @@
 RecvCANTask::RecvCANTask(
   NodeData& nodeData,
   FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16>& canBus)
-  : Task(100), nodeData(nodeData), canBus(canBus) {}
+  : Task(50), nodeData(nodeData), canBus(canBus) {}
 
 void RecvCANTask::execute() {
   if (canBus.read(msg)) {
-    if (msg.id == (0x00)) {
+    if (msg.id == 0x000) {
       handleRelayCtrlMessage(msg, nodeData);
 
       if (SERIALPRINT) {

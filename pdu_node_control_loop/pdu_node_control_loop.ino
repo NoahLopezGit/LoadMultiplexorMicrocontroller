@@ -221,7 +221,7 @@ public:
 // init state and config
 NodeState nodeState = NODE_INIT;
 NodeData nodeData{
-  0,                               //id
+  1,                               //id
   1,                               //schema_version
   nodeState,                       //state
   { 0, 0, 0, 0 },                  // current
@@ -233,7 +233,11 @@ NodeData nodeData{
 // init tasks
 CurrentCheckTask currentcheck(nodeData);
 RelayCtrlTask relayCtrl(nodeData);
+
+#if TOGGLETEST
 ToggleTestTask toggleTest(nodeData);
+#endif
+
 
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> canBus;
 SendDeviceStatusTask sendDeviceStatus(nodeData, canBus);
@@ -263,8 +267,10 @@ void loop() {
   // maybe get current
   currentcheck.run();
 
+#if TOGGLETEST
   // maybe run relay toggle sequence
   toggleTest.run();
+#endif
 
   // maybe send telemetry
   sendDeviceStatus.run();
