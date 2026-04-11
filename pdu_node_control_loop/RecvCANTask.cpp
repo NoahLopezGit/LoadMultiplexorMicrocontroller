@@ -32,6 +32,6 @@ void RecvCANTask::handleRelayCtrlMessage(const CAN_message_t& msg, NodeData& nod
   // set relay based on 2nd byte
   // relay setpoint buffer is 00000000, each bit corresponds to a relay, 1 for high and 0 for low
   for (int i = 0; i < 4; i++) {
-    nodeData.relaySetpointIsHigh[i] = msg.buf[1] & (1 << i);
+    nodeData.relaySetpoint[i] = msg.buf[1] & (1 << i);
   }
 }

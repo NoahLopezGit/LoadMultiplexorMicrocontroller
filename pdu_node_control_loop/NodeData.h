@@ -13,10 +13,6 @@ struct NodeData {
   uint8_t id;
   uint8_t schema_version;
   NodeState state;  // 0 boot, 1 active, 2 fault
-
   uint16_t current[4];
-
-  bool relaySetpointIsHigh[4];
-  bool relayStateIsHigh[4];
-  uint32_t relaySetpointUpdateTime;
+  bool relaySetpoint[4];
 };

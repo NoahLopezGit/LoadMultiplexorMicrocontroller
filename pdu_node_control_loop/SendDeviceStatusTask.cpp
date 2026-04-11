@@ -36,7 +36,7 @@ void SendDeviceStatusTask::packDeviceStatusMessage(const NodeData& nodeData, uin
 
   uint8_t relaySetpoints = 0;
   for (int i=0; i<4; i++){
-    relaySetpoints = relaySetpoints | nodeData.relaySetpointIsHigh[i] << i;
+    relaySetpoints = relaySetpoints | nodeData.relaySetpoint[i] << i;
   }
   payload[2] = relaySetpoints;
 

@@ -56,30 +56,11 @@ public:
 };
 
 // relaySetpointTask definition
-enum RelayCtrlState {
-  IDLE,
-  WAITING_FOR_ACTUATION,
-  CHECKING_ACTUATION
-};
-
-// relaySetpoint updater
-void updateRelaySetpoints(NodeData& state, bool relaySetpointIsHigh[4]) {
-  for (int i = 0; i < 4; i++) {
-    state.relaySetpointIsHigh[i] = relaySetpointIsHigh[i];
-  }
-  state.relaySetpointUpdateTime = millis();
-}
-
-// TODO change to actual DI pins when measurement circuit is physically added
 class RelayCtrlTask : public Task {
 private:
   NodeData& nodeData;
   int relayCtrlPins[4] = { 0, 1, 2, 3 };         // DIO pins are 0,1,2,3
-  int relayMeasurementPins[4] = { 0, 1, 2, 3 };  // DI pins are 0,1,2,3 (will be updated)
-  unsigned long waitStartTime;
-  RelayCtrlState ctrlState = IDLE;
-  bool relaySetpointIsHighSnapshot[4];
-  uint32_t waitDuration = 20;
+  bool relaySetpointSnapshot[4];
 
 public:
   RelayCtrlTask(NodeData& nodeData)
@@ -89,91 +70,29 @@ public:
     for (int i = 0; i < 4; i++) {
       pinMode(relayCtrlPins[i], OUTPUT);
       digitalWrite(relayCtrlPins[i], LOW);  // set default state
-      // pinMode(relayMeasurementPins[i], INPUT); // todo add back in when input pins are separate
     }
   }
 
   void execute() override {
-    switch (ctrlState) {
-      case IDLE:
-        {
-          // if rly ctrl flag set, actuate rly
-          // todo how do we know if it isn't being set or it has been update since?
-          bool relayWasUpdated = false;
-          for (int i = 0; i < 4; i++) {
-            if (nodeData.relaySetpointIsHigh[i] != nodeData.relayStateIsHigh[i]) {
-              digitalWrite(
-                relayCtrlPins[i],
-                nodeData.relaySetpointIsHigh[i] ? HIGH : LOW);
-              relayWasUpdated = true;
-            }
-          }
-
-          if (relayWasUpdated) {
-            for (int i = 0; i < 4; i++) {
-              relaySetpointIsHighSnapshot[i] = nodeData.relaySetpointIsHigh[i];
-            }
-            waitStartTime = millis();
-            ctrlState = WAITING_FOR_ACTUATION;
-          }
-
-          if (SERIALPRINT) {
-            Serial.print("Relay Setpoint: ");
-            for (int i = 0; i < 4; i++) {
-              Serial.print(nodeData.relaySetpointIsHigh[i]);
-              Serial.print(" ");
-            }
-            Serial.println();
-
-            Serial.print("Relay State: ");
-            for (int i = 0; i < 4; i++) {
-              Serial.print(nodeData.relayStateIsHigh[i]);
-              Serial.print(" ");
-            }
-            Serial.println();
-          }
-
-          break;
-        }
-
-      case WAITING_FOR_ACTUATION:
-        {
-          if (millis() - waitStartTime >= waitDuration) {
-            ctrlState = CHECKING_ACTUATION;
-          }
-          break;
-        }
-
-
-      case CHECKING_ACTUATION:
-        {
-          bool snapshotInvalid = false;
-          for (int i = 0; i < 4; i++) {
-            if (relaySetpointIsHighSnapshot[i] != nodeData.relaySetpointIsHigh[i]) {
-              snapshotInvalid = true;
-              break;
-            }
-          }
-
-          if (snapshotInvalid) {
-            ctrlState = IDLE;
-            break;
-          }
-
-          for (int i = 0; i < 4; i++) {
-            // update relay states
-            bool relayStateIsHigh = (digitalRead(relayMeasurementPins[i]) == HIGH);  // TODO this isn't a true readback until DI measurement is physically configured
-            nodeData.relayStateIsHigh[i] = relayStateIsHigh;
-
-            // check for fault
-            if (relaySetpointIsHighSnapshot[i] != relayStateIsHigh) {
-              nodeData.state = NODE_FAULT;
-            }
-          }
-
-          ctrlState = IDLE;
-          break;
-        }
+    bool relayWasUpdated = false;
+    for (int i = 0; i < 4; i++) {
+      if (nodeData.relaySetpoint[i] != relaySetpointSnapshot[i]) {
+        digitalWrite(
+          relayCtrlPins[i],
+          nodeData.relaySetpoint[i] ? HIGH : LOW
+        );
+        relaySetpointSnapshot[i] = nodeData.relaySetpoint[i];
+        relayWasUpdated = true;
+      }
+    }
+      
+    if (SERIALPRINT && relayWasUpdated) {
+      Serial.print("Relay Setpoint: ");
+      for (int i = 0; i < 4; i++) {
+        Serial.print(nodeData.relaySetpoint[i]);
+        Serial.print(" ");
+      }
+      Serial.println();
     }
   }
 
@@ -195,16 +114,16 @@ public:
 
   void execute() override {
     // // 5s single relay toggle test
-    // nodeData.relaySetpointIsHigh[0] = nodeData.relaySetpointIsHigh[0] ? false : true;
+    // nodeData.relaySetpoint[0] = nodeData.relaySetpoint[0] ? false : true;
 
     // relay toggle sequence test
     // Turn all relays off
     for (uint8_t i = 0; i < NUM_RELAYS; i++) {
-      nodeData.relaySetpointIsHigh[i] = false;
+      nodeData.relaySetpoint[i] = false;
     }
 
     // Turn on only the current relay
-    nodeData.relaySetpointIsHigh[currentIndex] = true;
+    nodeData.relaySetpoint[currentIndex] = true;
 
     // Advance to next state for next scheduler call
     currentIndex++;
@@ -221,13 +140,11 @@ public:
 // init state and config
 NodeState nodeState = NODE_INIT;
 NodeData nodeData{
-  1,                               //id
+  NODEID,                          //id
   1,                               //schema_version
   nodeState,                       //state
   { 0, 0, 0, 0 },                  // current
-  { false, false, false, false },  // relaySetpointIsHigh
-  { false, false, false, false },  // relayStateIsHigh
-  0                                // relaySetpointUpdateTime
+  { false, false, false, false },  // relaySetpoint
 };
 
 // init tasks
