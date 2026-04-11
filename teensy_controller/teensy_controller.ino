@@ -5,6 +5,8 @@ unsigned long wait_duration = 2000;  // Duration to wait before sending the next
 unsigned long last_send_time = 0;    // Variable to track the last time a message was sent
 int relay_on_idx = 0;
 int setpoint = 0;
+int node_counter = 0;
+int node_idx = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -49,6 +51,13 @@ void loop() {
 
     relay_on_idx += 1;  // Increment the relay index (4 total relays)
     relay_on_idx %= 4;
+
+    node_counter += 1;
+    node_counter %= 16;
+    node_idx = node_counter / 4; // floor divide bc int
+
+    msg.buf[0] = node_idx; // Set node to control
+
     setpoint = 0;
     setpoint = setpoint | (1 << relay_on_idx);  // Set the bit corresponding to the relay index
     msg.buf[1] = setpoint;                      // Set the first byte to the setpoint (which relay to turn on)
@@ -56,6 +65,8 @@ void loop() {
     myCan2.write(msg);
     last_send_time = millis();  // Update the last send time
     Serial.print("Sending CTRL msg: ");
+    Serial.print(msg.buf[0]);
+    Serial.print(" ");
     Serial.print(msg.buf[1]);
     Serial.println();
   }
