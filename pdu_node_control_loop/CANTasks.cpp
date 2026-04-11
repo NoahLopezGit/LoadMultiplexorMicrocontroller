@@ -69,7 +69,7 @@ void SendDeviceStatusTask::packDeviceStatusMessage(const NodeData& nodeData, uin
   payload[1] = static_cast<uint8_t>(nodeData.state);
 
   uint8_t relaySetpoints = 0;
-  for (int i=0; i<4; i++){
+  for (int i = 0; i < 4; i++) {
     relaySetpoints = relaySetpoints | nodeData.relaySetpoint[i] << i;
   }
   payload[2] = relaySetpoints;

@@ -57,7 +57,7 @@ public:
 class RelayCtrlTask : public Task {
 private:
   NodeData& nodeData;
-  int relayCtrlPins[4] = { 0, 1, 2, 3 };         // DIO pins are 0,1,2,3
+  int relayCtrlPins[4] = { 0, 1, 2, 3 };  // DIO pins are 0,1,2,3
   bool relaySetpointSnapshot[4];
 
 public:
@@ -77,13 +77,12 @@ public:
       if (nodeData.relaySetpoint[i] != relaySetpointSnapshot[i]) {
         digitalWrite(
           relayCtrlPins[i],
-          nodeData.relaySetpoint[i] ? HIGH : LOW
-        );
+          nodeData.relaySetpoint[i] ? HIGH : LOW);
         relaySetpointSnapshot[i] = nodeData.relaySetpoint[i];
         relayWasUpdated = true;
       }
     }
-      
+
     if (SERIALPRINT && relayWasUpdated) {
       Serial.print("Relay Setpoint: ");
       for (int i = 0; i < 4; i++) {
@@ -152,7 +151,6 @@ RelayCtrlTask relayCtrl(nodeData);
 #if TOGGLETEST
 ToggleTestTask toggleTest(nodeData);
 #endif
-
 
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> canBus;
 SendDeviceStatusTask sendDeviceStatus(nodeData, canBus);
