@@ -3,9 +3,7 @@
 #include "Config.h"
 #include "Task.h"
 #include "NodeData.h"
-#include "SendDeviceStatusTask.h"
-#include "SendCurrentTask.h"
-#include "RecvCANTask.h"
+#include "CANTasks.h"
 
 // CurrentCheckTask definition
 uint16_t getCurrent_mA(int pin) {  // returns current in mA (10000 mA max).

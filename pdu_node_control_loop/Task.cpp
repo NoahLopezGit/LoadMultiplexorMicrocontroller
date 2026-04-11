@@ -13,13 +13,14 @@ void Task::run() {
   if (isDue()) {
     lastRun = millis();
 
+#if SERIALPRINT
     uint32_t start = micros();  // start timer
+#endif
 
     execute();
 
-    uint32_t duration = micros() - start;  // elapsed time
-
 #if SERIALPRINT
+    uint32_t duration = micros() - start;  // elapsed time
     Serial.print("[Task] ");
     Serial.print(getName());
     Serial.print(" took ");
