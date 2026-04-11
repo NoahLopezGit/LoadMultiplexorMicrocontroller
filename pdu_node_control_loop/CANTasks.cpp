@@ -7,7 +7,7 @@ RecvCANTask::RecvCANTask(
   : Task(50), nodeData(nodeData), canBus(canBus) {}
 
 void RecvCANTask::execute() {
-  if (canBus.read(msg)) {
+  while (canBus.read(msg)) { // keep reading until buffer is clear
     if (msg.id == 0x000) {
       handleRelayCtrlMessage(msg, nodeData);
 
