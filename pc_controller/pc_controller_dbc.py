@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import queue
+import re
 import threading
 import time
 import tkinter as tk
@@ -137,6 +138,15 @@ class CanDbcViewer(tk.Tk):
         self.decoded_count = 0
         self.unknown_count = 0
         self.error_count = 0
+        self.command_message = self._get_command_message()
+        self.relay_signal_names = self._get_relay_signal_names()
+        self.node_ids = self._get_node_ids()
+        self.relay_setpoints = {
+            node_id: {signal_name: 0 for signal_name in self.relay_signal_names}
+            for node_id in self.node_ids
+        }
+        self.relay_vars: dict[tuple[int, str], tk.IntVar] = {}
+        self.command_status_var = tk.StringVar(value="Relay controls ready")
 
         self._build_ui()
         self._populate_expected_messages()
@@ -151,6 +161,8 @@ class CanDbcViewer(tk.Tk):
         ttk.Label(top, textvariable=self.dbc_var).pack(side=tk.LEFT)
         ttk.Label(top, textvariable=self.status_var, foreground="green").pack(side=tk.LEFT, padx=(18, 0))
         ttk.Label(top, textvariable=self.stats_var).pack(side=tk.RIGHT)
+
+        self._build_relay_controls()
 
         center = ttk.Panedwindow(self, orient=tk.VERTICAL)
         center.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
@@ -188,6 +200,62 @@ class CanDbcViewer(tk.Tk):
         log_scroll = ttk.Scrollbar(lower, orient=tk.VERTICAL, command=self.log_text.yview)
         log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.log_text.configure(yscrollcommand=log_scroll.set)
+
+    def _build_relay_controls(self) -> None:
+        controls = ttk.LabelFrame(self, text="Relay Controls", padding=10)
+        controls.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        if self.command_message is None:
+            ttk.Label(
+                controls,
+                text="CONTROLLER_CMD message not found in DBC.",
+            ).pack(side=tk.LEFT)
+            return
+
+        if not self.relay_signal_names:
+            ttk.Label(
+                controls,
+                text="No relay setpoint signals found in CONTROLLER_CMD.",
+            ).pack(side=tk.LEFT)
+            return
+
+        grid = ttk.Frame(controls)
+        grid.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        ttk.Label(grid, text="Node").grid(row=0, column=0, padx=(0, 14), sticky=tk.W)
+        for relay_idx, signal_name in enumerate(self.relay_signal_names, start=1):
+            ttk.Label(grid, text=self._relay_label(signal_name)).grid(
+                row=0,
+                column=relay_idx,
+                padx=8,
+                sticky=tk.W,
+            )
+
+        for row_idx, node_id in enumerate(self.node_ids, start=1):
+            ttk.Label(grid, text=f"Node {node_id}").grid(
+                row=row_idx,
+                column=0,
+                padx=(0, 14),
+                pady=3,
+                sticky=tk.W,
+            )
+            for col_idx, signal_name in enumerate(self.relay_signal_names, start=1):
+                var = tk.IntVar(value=0)
+                self.relay_vars[(node_id, signal_name)] = var
+                ttk.Checkbutton(
+                    grid,
+                    text="On",
+                    variable=var,
+                    command=lambda n=node_id, s=signal_name: self._on_relay_toggled(n, s),
+                ).grid(row=row_idx, column=col_idx, padx=8, pady=3, sticky=tk.W)
+
+        right = ttk.Frame(controls)
+        right.pack(side=tk.RIGHT, padx=(12, 0), fill=tk.Y)
+        ttk.Label(right, textvariable=self.command_status_var).pack(anchor=tk.E)
+        ttk.Button(right, text="All Off", command=self._send_all_relays_off).pack(
+            anchor=tk.E,
+            pady=(6, 0),
+        )
 
     def _populate_expected_messages(self) -> None:
         for message in sorted(self.database.messages, key=lambda m: m.frame_id):
@@ -241,6 +309,90 @@ class CanDbcViewer(tk.Tk):
         if isinstance(value, float):
             return f"{value:.3f}".rstrip("0").rstrip(".")
         return str(value)
+
+    def _get_command_message(self) -> Any | None:
+        try:
+            return self.database.get_message_by_name("CONTROLLER_CMD")
+        except KeyError:
+            return None
+
+    def _get_relay_signal_names(self) -> list[str]:
+        if self.command_message is None:
+            return []
+
+        relay_signals = [
+            signal.name
+            for signal in self.command_message.signals
+            if re.fullmatch(r"relay_\d+_setpoint", signal.name)
+        ]
+        return sorted(relay_signals, key=self._relay_signal_index)
+
+    def _get_node_ids(self) -> list[int]:
+        node_ids: set[int] = set()
+        for message in self.database.messages:
+            match = re.fullmatch(r"DEVICE_STATUS_NODE(\d+)", message.name)
+            if match:
+                node_ids.add(int(match.group(1)))
+
+        if node_ids:
+            return sorted(node_ids)
+        return [1]
+
+    @staticmethod
+    def _relay_signal_index(signal_name: str) -> int:
+        match = re.fullmatch(r"relay_(\d+)_setpoint", signal_name)
+        if match:
+            return int(match.group(1))
+        return 0
+
+    def _relay_label(self, signal_name: str) -> str:
+        return f"Relay {self._relay_signal_index(signal_name)}"
+
+    def _on_relay_toggled(self, node_id: int, signal_name: str) -> None:
+        value = self.relay_vars[(node_id, signal_name)].get()
+        self.relay_setpoints[node_id][signal_name] = value
+        self._send_relay_command(node_id)
+
+    def _send_all_relays_off(self) -> None:
+        for node_id in self.node_ids:
+            for signal_name in self.relay_signal_names:
+                self.relay_setpoints[node_id][signal_name] = 0
+                relay_var = self.relay_vars.get((node_id, signal_name))
+                if relay_var is not None:
+                    relay_var.set(0)
+            self._send_relay_command(node_id)
+
+    def _send_relay_command(self, node_id: int) -> None:
+        if self.command_message is None:
+            return
+
+        signals = {"node_id": node_id}
+        signals.update(self.relay_setpoints[node_id])
+
+        try:
+            data = self.command_message.encode(signals)
+            msg = can.Message(
+                arbitration_id=self.command_message.frame_id,
+                data=data,
+                is_extended_id=False,
+            )
+            self.bus.send(msg)
+        except Exception as exc:  # pragma: no cover - hardware/runtime dependent
+            self.error_count += 1
+            self._update_stats()
+            self.command_status_var.set(f"Send failed: {exc}")
+            self._append_log(f"[{self._fmt_timestamp(time.time())}] ERROR relay command: {exc}")
+            return
+
+        relay_parts = ", ".join(
+            f"{self._relay_label(signal_name)}={value}"
+            for signal_name, value in self.relay_setpoints[node_id].items()
+        )
+        raw_hex = " ".join(f"{byte:02X}" for byte in data)
+        self.command_status_var.set(f"Sent Node {node_id}: {raw_hex}")
+        self._append_log(
+            f"[{self._fmt_timestamp(time.time())}] TX CONTROLLER_CMD Node {node_id}  {relay_parts}"
+        )
 
     def _drain_queue(self) -> None:
         while True:
@@ -296,6 +448,8 @@ class CanDbcViewer(tk.Tk):
                 values=("", signal_name, "", self._fmt_signal_value(value)),
             )
 
+        self._sync_relay_controls_from_status(msg_name, item["signals"])
+
         signal_parts = ", ".join(
             f"{name}={self._fmt_signal_value(value)}"
             for name, value in item["signals"].items()
@@ -303,6 +457,25 @@ class CanDbcViewer(tk.Tk):
         self._append_log(
             f"[{self._fmt_timestamp(item['timestamp'])}] {msg_name} (0x{item['frame_id']:03X})  {signal_parts}"
         )
+
+    def _sync_relay_controls_from_status(self, msg_name: str, signals: dict[str, Any]) -> None:
+        match = re.fullmatch(r"DEVICE_STATUS_NODE(\d+)", msg_name)
+        if not match:
+            return
+
+        node_id = int(match.group(1))
+        if node_id not in self.relay_setpoints:
+            return
+
+        for signal_name in self.relay_signal_names:
+            if signal_name not in signals:
+                continue
+
+            value = int(signals[signal_name])
+            self.relay_setpoints[node_id][signal_name] = value
+            relay_var = self.relay_vars.get((node_id, signal_name))
+            if relay_var is not None:
+                relay_var.set(value)
 
     def on_close(self) -> None:
         self.stop_event.set()
