@@ -25,11 +25,11 @@ pip install cantools python-can
 
 Example run:
 
-python can_dbc_gui_viewer.py --dbc CAN_schema.dbc --channel can0 --bustype socketcan
+python pc_controller_dbc.py.py --dbc CAN_schema.dbc --channel can0 --bustype socketcan --bitrate 500000
 
 Other examples:
 
-python can_dbc_gui_viewer.py --dbc CAN_schema.dbc --channel vcan0 --bustype socketcan
-python can_dbc_gui_viewer.py --dbc CAN_schema.dbc --channel PCAN_USBBUS1 --bustype pcan --bitrate 500000
+python pc_controller_dbc.py.py --dbc CAN_schema.dbc --channel vcan0 --bustype socketcan
+python pc_controller_dbc.py.py --dbc CAN_schema.dbc --channel PCAN_USBBUS1 --bustype pcan --bitrate 500000
 
 If you want, I can also make a second version that reads CAN frames from a log file instead of a live bus.
